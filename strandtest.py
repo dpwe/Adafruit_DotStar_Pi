@@ -1,52 +1,60 @@
 #!/usr/bin/python
 
-# Simple strand test for Adafruit Dot Star RGB LED strip.
-# This is a basic diagnostic tool, NOT a graphics demo...helps confirm
-# correct wiring and tests each pixel's ability to display red, green
-# and blue and to forward data down the line.  By limiting the number
-# and color of LEDs, it's reasonably safe to power a couple meters off
-# USB.  DON'T try that with other code!
-
+import math
 import time
 from dotstar import Adafruit_DotStar
 
-numpixels = 30 # Number of LEDs in strip
+num_pixels = 240 # Number of LEDs in strip.
 
-# Here's how to control the strip from any two GPIO pins:
-datapin   = 23
-clockpin  = 24
-strip     = Adafruit_DotStar(numpixels, datapin, clockpin)
+strip = Adafruit_DotStar(num_pixels)        # Use SPI (pins 10=MOSI, 11=SCLK).
 
-# Alternate ways of declaring strip:
-# strip   = Adafruit_DotStar(numpixels)           # Use SPI (pins 10=MOSI, 11=SCLK)
-# strip   = Adafruit_DotStar(numpixels, 32000000) # SPI @ ~32 MHz
-# strip   = Adafruit_DotStar()                    # SPI, No pixel buffer
-# strip   = Adafruit_DotStar(32000000)            # 32 MHz SPI, no pixel buf
-# See image-pov.py for explanation of no-pixel-buffer use.
-# Append "order='gbr'" to declaration for proper colors w/older DotStar strips)
+strip.begin()             # Initialize pins for output.
+strip.setBrightness(255)  # Full brightness.
 
-strip.begin()           # Initialize pins for output
-strip.setBrightness(64) # Limit brightness to ~1/4 duty cycle
+def simple_chaser(strip, step, period=60):
+  for pixel in range(strip.numPixels()):
+    r = 1.0 + 0.5*math.cos(
+      (pixel - step)/float(period)*2*math.pi - 2*math.pi/3)
+    g = 1.0 + 0.5*math.cos(
+      (pixel - step)/float(period)*2*math.pi + 2*math.pi/3)
+    b = 1.0 + 0.5*math.cos(
+      (pixel - step)/float(period)*2*math.pi)
+    color = ((min(255, int(256*max(r, 0))) << 16) +
+             (min(255, int(256*max(g, 0))) << 8) +
+             (min(255, int(256*max(b, 0)))))
+    strip.setPixelColor(pixel, color)
 
-# Runs 10 LEDs at a time along strip, cycling through red, green and blue.
-# This requires about 200 mA for all the 'on' pixels + 1 mA per 'off' pixel.
+class TravelingWave(object):
+  def __init__(self, wavenumber, omega, phi_0, gain, offset):
+    self.wavenumber = wavenumber
+    self.omega = omega
+    self.phi_0 = phi_0
+    self.gain = gain
+    self.offset = offset
 
-head  = 0               # Index of first 'on' pixel
-tail  = -10             # Index of last 'off' pixel
-color = 0xFF0000        # 'On' color (starts red)
+  def value(self, x, t):
+    return self.offset + self.gain * math.cos(self.phi_0 + self.wavenumber * x - self.omega * t)
 
-while True:                              # Loop forever
+def traveling_wave_chaser(strip, step, r_wave, g_wave, b_wave):
+  for pixel in range(strip.numPixels()):
+    r = r_wave.value(pixel, step)
+    g = g_wave.value(pixel, step)
+    b = b_wave.value(pixel, step)
+    color = ((min(255, int(256*max(r, 0))) << 16) +
+             (min(255, int(256*max(g, 0))) << 8) +
+             (min(255, int(256*max(b, 0)))))
+    strip.setPixelColor(pixel, color)
+      
+    
+period = 60
 
-	strip.setPixelColor(head, color) # Turn on 'head' pixel
-	strip.setPixelColor(tail, 0)     # Turn off 'tail'
-	strip.show()                     # Refresh strip
-	time.sleep(1.0 / 50)             # Pause 20 milliseconds (~50 fps)
+r_wave = TravelingWave(2*math.pi/period, 1*math.pi/period, 0.0, 0.5, 0.5)
+g_wave = TravelingWave(2*math.pi/period, 2*math.pi/period, 2*math.pi/3, 0.5, 0.5)
+b_wave = TravelingWave(math.pi/period, -2*math.pi/period, -2*math.pi/3, 0.5, 0.5)
 
-	head += 1                        # Advance head position
-	if(head >= numpixels):           # Off end of strip?
-		head    = 0              # Reset to start
-		color >>= 8              # Red->green->blue->black
-		if(color == 0): color = 0xFF0000 # If black, reset to red
-
-	tail += 1                        # Advance tail position
-	if(tail >= numpixels): tail = 0  # Off end? Reset
+while True:
+  for step in range(4*period):
+    #simple_chaser(strip, step, period)
+    traveling_wave_chaser(strip, step, r_wave, g_wave, b_wave)
+    strip.show()
+    time.sleep(0.020)
